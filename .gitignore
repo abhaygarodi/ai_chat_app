@@ -1,0 +1,45 @@
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Local Qdrant data (recreated at runtime; cloud Qdrant is used in prod)
+qdrant_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Build / packaging
+*.egg-info/
+dist/
+build/
+
+# Logs / temp
+*.log
+uv.log
+uv.err
+_test_*.py
+_demo_*.py
+_e2e_*.py
+_http_*.py
+qdrant_data/
+.env
