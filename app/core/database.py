@@ -24,7 +24,14 @@ def get_qdrant() -> QdrantDeps:
         return _deps
 
     settings = get_settings()
-    client = QdrantClient(path=settings.QDRANT_PATH)
+    if settings.QDRANT_URL:
+        client = QdrantClient(
+            url=settings.QDRANT_URL,
+            api_key=settings.QDRANT_API_KEY or None,
+            prefer_grpc=False,
+        )
+    else:
+        client = QdrantClient(path=settings.QDRANT_PATH)
     _deps = QdrantDeps(client=client, collection_name=settings.QDRANT_COLLECTION)
     return _deps
 

@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "hash"
 
 
+    # Qdrant: if QDRANT_URL is set (e.g. Qdrant Cloud), it is used.
+    # Otherwise falls back to local file-based Qdrant at QDRANT_PATH.
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
     QDRANT_PATH: str = "./qdrant_data"
     QDRANT_COLLECTION: str = "pdf_chunks"
     QDRANT_RECREATE_ON_DIM_MISMATCH: bool = True

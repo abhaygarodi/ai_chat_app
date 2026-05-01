@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: pdf-rag-chat
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: LLM_PROVIDER
+        value: groq
+      - key: EMBEDDINGS_PROVIDER
+        value: hash
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
+      - key: ENABLE_OCR
+        value: "false"
+      # Secrets — set these in the Render dashboard, do not commit values.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
