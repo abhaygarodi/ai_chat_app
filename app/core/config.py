@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "PDF RAG Chat API"
     CORS_ALLOW_ORIGINS: List[str] = Field(default_factory=lambda: ["*"])
 
+    DATA_DIR: str = "./data"
+    UPLOAD_DIR: str = "./data/uploads"
+    DOCUMENTS_DB_PATH: str = "./data/documents.json"
+
     # Providers (free/offline)
     # - LLM_PROVIDER: "extractive"
     # - EMBEDDINGS_PROVIDER: "hash"

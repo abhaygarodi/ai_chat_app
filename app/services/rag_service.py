@@ -17,7 +17,15 @@ from app.core.database import (
     get_qdrant,
 )
 from app.core.exceptions import UpstreamUnavailableError
-from app.services.model_providers import Providers, get_providers
+from app.schemas.chat import Citation
+from app.services.model_providers import ExtractiveChatProvider, Providers, get_providers
+
+
+def _short_quote(text: str, *, limit: int = 280) -> str:
+    s = re.sub(r"\s+", " ", (text or "").strip())
+    if len(s) <= limit:
+        return s
+    return s[: limit - 1].rstrip() + "…"
 
 
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
@@ -186,13 +194,15 @@ class RAGService:
 
         deps.client.upsert(collection_name=deps.collection_name, points=points)
 
-    async def answer_query(self, document_id: uuid.UUID, query: str) -> Tuple[str, Set[int]]:
+    async def answer_query(
+        self, document_id: uuid.UUID, query: str
+    ) -> Tuple[str, Set[int], List[Citation]]:
         query = (query or "").strip()
         if not query:
             raise ValueError("Query cannot be empty")
 
         if not collection_exists():
-            return "Not found in document", set()
+            return "Not found in document", set(), []
 
         deps = get_qdrant()
         # Idempotent: ensures the document_id payload index exists on the
@@ -209,11 +219,14 @@ class RAGService:
 
         contexts: List[str] = []
         pages: Set[int] = set()
+        retrieved_pages: List[int] = []
+        raw_contexts: List[str] = []
+        chunk_texts_pages: List[Tuple[str, int | None]] = []
 
         if self._settings.LLM_PROVIDER == "extractive":
             q_tokens = _keyword_set(query)
             if not q_tokens:
-                return "Not found in document", set()
+                return "Not found in document", set(), []
 
             scanned = 0
             offset = None
@@ -246,14 +259,16 @@ class RAGService:
                     break
 
             if not scored:
-                return "Not found in document", set()
+                return "Not found in document", set(), []
 
             scored.sort(key=lambda x: x[0], reverse=True)
             top = scored[: self._settings.TOP_K]
             contexts = [t[1] for t in top]
-            for _, _, pg in top:
+            for _, text, pg in top:
                 if pg is not None:
                     pages.add(pg)
+                chunk_texts_pages.append((text, pg))
+                raw_contexts.append(text)
         else:
             try:
                 vector = await self._providers.embeddings.embed_query(query)
@@ -279,6 +294,10 @@ class RAGService:
                 page_number = payload.get("page_number")
                 pg = int(page_number) if page_number is not None else None
                 chunk_pages.append(pg)
+                if pg is not None:
+                    retrieved_pages.append(pg)
+                raw_contexts.append(text)
+                chunk_texts_pages.append((text, pg))
                 # Tag each chunk with its page so the LLM can cite sources accurately.
                 tag = f"[page {pg}]" if pg is not None else "[page ?]"
                 contexts.append(f"{tag}\n{text}")
@@ -287,18 +306,60 @@ class RAGService:
         context_text = context_text[: self._settings.MAX_CONTEXT_CHARS]
 
         if not context_text.strip():
-            return "Not found in document", set()
+            return "Not found in document", set(), []
 
+        used_fallback = False
         try:
             answer = await self._providers.chat.answer(context=context_text, question=query)
-        except Exception as exc:
-            raise UpstreamUnavailableError(str(exc)) from exc
+        except Exception:
+            if self._settings.LLM_PROVIDER == "extractive":
+                raise
+            # Primary LLM unavailable (e.g. bad API key, network outage).
+            # Fall back to the offline extractive provider over the raw retrieved context
+            # so the system still produces grounded answers.
+            fallback = ExtractiveChatProvider()
+            fallback_ctx = "\n\n---\n\n".join(raw_contexts)[: self._settings.MAX_CONTEXT_CHARS]
+            answer = await fallback.answer(context=fallback_ctx, question=query)
+            used_fallback = True
 
-        if self._settings.LLM_PROVIDER != "extractive":
+        if self._settings.LLM_PROVIDER != "extractive" and not used_fallback:
             cited = {int(m) for m in re.findall(r"\[page\s+(\d+)\]", answer or "", flags=re.IGNORECASE)}
             answer = re.sub(r"\s*\[page\s+\d+\]", "", answer or "", flags=re.IGNORECASE).strip()
             pages = cited
             if "not found in document" in answer.lower():
                 pages = set()
+        elif used_fallback:
+            if "not found in document" not in (answer or "").lower():
+                # Attribute each answer sentence to the chunk(s) whose text contains it,
+                # so we cite only the page(s) the answer actually came from.
+                cited: Set[int] = set()
+                for line in (answer or "").splitlines():
+                    s = line.strip()
+                    if not s:
+                        continue
+                    for text, pg in chunk_texts_pages:
+                        if pg is not None and s in text:
+                            cited.add(pg)
+                pages = cited
 
-        return answer, pages
+        # Build per-page citations: pick the chunk text most relevant to the answer.
+        citations: List[Citation] = []
+        if pages and "not found in document" not in (answer or "").lower():
+            answer_lines = [ln.strip() for ln in (answer or "").splitlines() if ln.strip()]
+            for pg in sorted(pages):
+                best_text: str | None = None
+                for text, p in chunk_texts_pages:
+                    if p != pg:
+                        continue
+                    if any(ln and ln in text for ln in answer_lines):
+                        best_text = text
+                        break
+                if best_text is None:
+                    for text, p in chunk_texts_pages:
+                        if p == pg:
+                            best_text = text
+                            break
+                if best_text:
+                    citations.append(Citation(page=pg, quote=_short_quote(best_text)))
+
+        return answer, pages, citations

@@ -6,6 +6,12 @@
 
 # Local Qdrant data (recreated at runtime; cloud Qdrant is used in prod)
 qdrant_data/
+data/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
 
 # Python
 __pycache__/

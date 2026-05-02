@@ -11,7 +11,13 @@ class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
 
 
+class Citation(BaseModel):
+    page: int
+    quote: str
+
+
 class ChatResponse(BaseModel):
     answer: str
     source_pages: List[int]
+    citations: List[Citation] = Field(default_factory=list)
 

@@ -13,8 +13,10 @@ router = APIRouter()
 async def chat(req: ChatRequest) -> ChatResponse:
     try:
         rag_service = RAGService()
-        answer, pages = await rag_service.answer_query(document_id=req.document_id, query=req.query)
-        return ChatResponse(answer=answer, source_pages=sorted(pages))
+        answer, pages, citations = await rag_service.answer_query(
+            document_id=req.document_id, query=req.query
+        )
+        return ChatResponse(answer=answer, source_pages=sorted(pages), citations=citations)
     except UpstreamUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc) or "Upstream provider unavailable") from exc
     except ValueError as exc:
