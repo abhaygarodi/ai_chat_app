@@ -10,7 +10,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from qdrant_client.http import models as qm
 
 from app.core.config import get_settings
-from app.core.database import collection_exists, ensure_collection, get_qdrant
+from app.core.database import (
+    _ensure_payload_indexes,
+    collection_exists,
+    ensure_collection,
+    get_qdrant,
+)
 from app.core.exceptions import UpstreamUnavailableError
 from app.services.model_providers import Providers, get_providers
 
@@ -190,6 +195,9 @@ class RAGService:
             return "Not found in document", set()
 
         deps = get_qdrant()
+        # Idempotent: ensures the document_id payload index exists on the
+        # already-created collection (required by Qdrant Cloud for filtering).
+        _ensure_payload_indexes(deps.client, deps.collection_name)
         doc_filter = qm.Filter(
             must=[
                 qm.FieldCondition(

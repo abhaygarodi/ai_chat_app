@@ -53,6 +53,23 @@ def collection_exists() -> bool:
     return any(c.name == deps.collection_name for c in existing)
 
 
+def _ensure_payload_indexes(client: QdrantClient, name: str) -> None:
+    """
+    Qdrant Cloud requires explicit payload indexes before you can filter by a field.
+    Local file-based Qdrant doesn't enforce this. Idempotent — safe to call repeatedly.
+    """
+    for field, schema in (("document_id", qm.PayloadSchemaType.KEYWORD),):
+        try:
+            client.create_payload_index(
+                collection_name=name,
+                field_name=field,
+                field_schema=schema,
+            )
+        except Exception:
+            # Index already exists or backend doesn't require it — safe to ignore.
+            pass
+
+
 def ensure_collection(vector_size: int) -> None:
     deps = get_qdrant()
     client = deps.client
@@ -73,9 +90,11 @@ def ensure_collection(vector_size: int) -> None:
                     "Delete your Qdrant data directory or enable QDRANT_RECREATE_ON_DIM_MISMATCH."
                 )
         else:
+            _ensure_payload_indexes(client, name)
             return
 
     client.create_collection(
         collection_name=name,
         vectors_config=qm.VectorParams(size=vector_size, distance=qm.Distance.COSINE),
     )
+    _ensure_payload_indexes(client, name)
